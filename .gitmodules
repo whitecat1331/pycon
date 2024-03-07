@@ -1,3 +1,5 @@
 [submodule "takeover"]
 	path = takeover
-	url = https://github.com/whitecat1331/takeover.git
+	url = git@github.com:whitecat1331/takeover.git
+[submodule "takeover/"]
+	url = git@github.com:whitecat1331/takeover.git
