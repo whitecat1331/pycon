@@ -1,5 +1,7 @@
+import os
 import sublist3r
 import dns.resolver
+import takeover.takeover
 from icecream import ic
 from pythonping import ping
 
@@ -44,8 +46,13 @@ class Pycon:
     def has_https(domain):
         return  200 <= requests.get(f"https://{domain}").status_code < 300
 
-    def check_takeover():
-        pass
+    @staticmethod
+    def check_takeover(domain=None, threads=1, d_list=None, 
+                       proxy=None, output="results/takeover_results.txt", 
+                       timeout=None, process=False, verbose=True):
+        takeover.takeover.main(domain=domain, threads=threads, d_list=d_list,
+                               proxy=proxy, output=output, timeout=timeout, 
+                               process=process, verbose=verbose)
 
         
 
@@ -55,7 +62,8 @@ def main():
 def test(domain="amazon.com"):
     # ic(Pycon.query_sublist3r(domain))
     # ic(Pycon.query_dns(domain))
-    ic(Pycon.ping_host(domain))
+    # ic(Pycon.ping_host(domain))
+    Pycon.check_takeover(domain="youtube.com")
 
 if __name__ == "__main__":
     test()
