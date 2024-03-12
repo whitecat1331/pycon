@@ -59,10 +59,10 @@ def has_https(domain):
 
 def check_takeover(domain, file, threads=1, d_list=None, 
                    proxy=None, timeout=None, process=False, 
-                   verbose=False):
+                   verbose=False, stdout=None):
     takeover.takeover.main(domain=domain, threads=threads, d_list=d_list,
                            proxy=proxy, output=file, timeout=timeout, 
-                           process=process, verbose=verbose)
+                           process=process, verbose=verbose, stdout=stdout)
 
 
 def check_eyewitness(file_domains, dir):
@@ -74,13 +74,15 @@ def check_eyewitness(file_domains, dir):
         f.write(output)
     
 
-def check_waybackurls(host, with_subs=False):
+def check_waybackurls(host, file, with_subs=False):
     if with_subs:
         url = 'http://web.archive.org/cdx/search/cdx?url=*.%s/*&output=json&fl=original&collapse=urlkey' % host
     else:
         url = 'http://web.archive.org/cdx/search/cdx?url=%s/*&output=json&fl=original&collapse=urlkey' % host
     r = requests.get(url)
     results = r.json()
+    with open(file, 'w') as f:
+        json.dump(results, f)
     return results[1:]
 
 
@@ -116,19 +118,24 @@ def pycon(domain):
     active_domains = [domain if is_alive(domain) else '' for domain in sublist3r_results]
     active_domains = list(filter(None, active_domains))
     make_directories(RESULTS, active_domains)
-    print("scraping active domain info")
+    print("scraping active domain info\n")
     for domain in active_domains:
+        print(domain)
         print("check nmap")
         check_nmap(domain, os.path.join(RESULTS, domain, "nmap.json"))
         print("query dns")
         query_dns(domain, os.path.join(RESULTS, domain, "dns.json"))
         print("check waybackurl")
-        check_waybackurls(domain, os.path.join(RESULTS, domain, "waybackurl.txt"))
-        print("takevers")
-        check_takeover(domain, os.path.join(RESULTS, domain, "takeover.txt"))
+        check_waybackurls(domain, os.path.join(RESULTS, domain, "waybackurl.json"))
+        print("takeover")
+        check_takeover(domain, os.path.join(RESULTS, domain, "takeover.txt"),
+                       stdout=os.path.join(RESULTS, domain, "takeover.out"))
+        print()
+
         
     ic(active_domains)
     web_domains = [domain if (has_http(domain) or has_https(domain)) else '' for domain in active_domains]
+    web_domains = list(filter(None, web_domains))
     print(web_domains)
     print("Eyewitness")
 
