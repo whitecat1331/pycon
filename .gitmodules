@@ -3,3 +3,6 @@
 	url = git@github.com:whitecat1331/takeover.git
 [submodule "takeover/"]
 	url = git@github.com:whitecat1331/takeover.git
+[submodule "EyeWitness"]
+	path = EyeWitness
+	url = git@github.com:whitecat1331/EyeWitness.git
