@@ -6,9 +6,10 @@ import sublist3r
 import dns.resolver
 import takeover.takeover
 import subprocess
+import shutil
 import nmap
 import traceback
-from pathlib import Path
+from tqdm import tqdm 
 
 from icecream import ic
 from pythonping import ping
@@ -49,7 +50,6 @@ def is_alive(host, count=3, timeout=2):
 
 
 def has_http(domain):
-    print(domain)
     return  200 <= requests.get(f"http://{domain}").status_code < 300
 
 
@@ -66,12 +66,21 @@ def check_takeover(domain, file, threads=1, d_list=None,
 
 
 def check_eyewitness(file_domains, dir):
-    args = ("python", "EyeWitness/Python/EyeWitness.py", "-f", file_domains, "-d", "eyewitness_results/", "--resolve", "--no-prompt")
-    popen = subprocess.Popen(args, ouput=subprocess.PIPE)
+    args = ("python", "EyeWitness/Python/EyeWitness.py", "-f", 
+            file_domains, "-d", "eyewitness_results", 
+            "--resolve", "--no-prompt", "--delay", "3")
+    popen = subprocess.Popen(args, stdout=subprocess.PIPE)
     popen.wait()
     output = popen.stdout.read()
-    with open(dir / "eyewitness.output", 'w') as f:
-        f.write(output)
+    with open("eyewitness.output", 'w') as f:
+        f.write(str(output))
+
+    shutil.move("eyewitness_results", dir)
+    dir = os.path.join(dir, "eyewitness_results")
+    shutil.move("geckodriver.log", dir)
+    shutil.move("eyewitness.output", dir)
+
+
     
 
 def check_waybackurls(host, file, with_subs=False):
@@ -91,11 +100,10 @@ def check_waybackurls(host, file, with_subs=False):
 
 def check_nmap(domain, file):
     nm = nmap.PortScanner()
-    nm.scan(domain, arguments='-T4')
-    nm=nm.scaninfo()
+    scan = nm.scan(domain, arguments='-T4')
     with open(file, 'w') as results:
-        json.dump(nm, results)
-    return nm
+        json.dump(scan, results)
+    return scan
 
 def make_dir(dir):
     if not os.path.isdir(dir):
@@ -108,36 +116,39 @@ def make_directories(dir, domains):
 
 RESULTS = "results"
 def pycon(domain):
+    shutil.rmtree(RESULTS)
     make_dir(RESULTS)
     print("sublist3r")
     sublist3r_results = query_sublist3r(domain, 
                         savefile=os.path.join(RESULTS, "sublist3r_results.txt"))
     sublist3r_results.append(domain)
-    print("active domain filter")
     ic(sublist3r_results)
+    print("active domain filter")
     active_domains = [domain if is_alive(domain) else '' for domain in sublist3r_results]
     active_domains = list(filter(None, active_domains))
+    ic(active_domains)
     make_directories(RESULTS, active_domains)
-    print("scraping active domain info\n")
-    for domain in active_domains:
-        print(domain)
-        print("check nmap")
+    print("scraping active domain info")
+    for domain in tqdm(active_domains):
         check_nmap(domain, os.path.join(RESULTS, domain, "nmap.json"))
-        print("query dns")
         query_dns(domain, os.path.join(RESULTS, domain, "dns.json"))
-        print("check waybackurl")
         check_waybackurls(domain, os.path.join(RESULTS, domain, "waybackurl.json"))
-        print("takeover")
         check_takeover(domain, os.path.join(RESULTS, domain, "takeover.txt"),
                        stdout=os.path.join(RESULTS, domain, "takeover.out"))
-        print()
 
         
     ic(active_domains)
     web_domains = [domain if (has_http(domain) or has_https(domain)) else '' for domain in active_domains]
     web_domains = list(filter(None, web_domains))
-    print(web_domains)
+    ic(web_domains)
     print("Eyewitness")
+    web_domain_path = os.path.join(RESULTS, "web_domains.txt")
+    with open(web_domain_path, 'w') as f:
+        for domain in web_domains:
+            f.write(domain + '\n')
+
+    check_eyewitness(web_domain_path, RESULTS)
+
 
 
     
@@ -162,7 +173,7 @@ def test(domain="youtube.com"):
     # ic(query_dns(domain, "dns.json"))
     # ic(ping_host(domain))
     # check_takeover(domain="youtube.com")
-    # check_eyewitness("urls.txt")
+    # check_eyewitness("results/web_domains.txt", "results")
     # ic(check_waybackurls(domain))
     # ic(check_nmap(domain, "test.txt"))
     pycon(domain)
