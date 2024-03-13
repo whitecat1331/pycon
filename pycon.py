@@ -9,6 +9,8 @@ import subprocess
 import shutil
 import nmap
 import traceback
+import whois
+import datetime
 from tqdm import tqdm 
 
 from icecream import ic
@@ -20,12 +22,16 @@ import EyeWitness
 DNS_RECORD_TYPES = ['A', 'AAAA', 'MX', 'NS', 'TXT', 'SOA']
 
 
+def serialize_datetime(obj): 
+    if isinstance(obj, datetime.datetime): 
+        return obj.isoformat() 
+    raise TypeError("Type not serializable") 
+
 def query_sublist3r(domain, no_threads=40, savefile=None,
                   ports=None, silent=True, verbose=False, 
                   enable_bruteforce=False, engines=None):
     return sublist3r.main(domain, no_threads, savefile, ports, silent, 
                           verbose, enable_bruteforce, engines)
-
 
 def query_dns(domain, file):
     info = {"domain": domain}
@@ -39,7 +45,6 @@ def query_dns(domain, file):
 
     return info
 
-
 def is_alive(host, count=3, timeout=2):
     try:
         ping_result = ping(target=host, count=count, timeout=timeout)
@@ -48,14 +53,11 @@ def is_alive(host, count=3, timeout=2):
 
     return ping_result.stats_packets_returned > 0
 
-
 def has_http(domain):
     return  200 <= requests.get(f"http://{domain}").status_code < 300
 
-
 def has_https(domain):
     return  200 <= requests.get(f"https://{domain}").status_code < 300
-
 
 def check_takeover(domain, file, threads=1, d_list=None, 
                    proxy=None, timeout=None, process=False, 
@@ -64,24 +66,32 @@ def check_takeover(domain, file, threads=1, d_list=None,
                            proxy=proxy, output=file, timeout=timeout, 
                            process=process, verbose=verbose, stdout=stdout)
 
-
-def check_eyewitness(file_domains, dir):
+def check_eyewitness(file_domains, dir, silent=False):
     args = ("python", "EyeWitness/Python/EyeWitness.py", "-f", 
             file_domains, "-d", "eyewitness_results", 
             "--resolve", "--no-prompt", "--delay", "3")
-    popen = subprocess.Popen(args, stdout=subprocess.PIPE)
-    popen.wait()
-    output = popen.stdout.read()
-    with open("eyewitness.output", 'w') as f:
-        f.write(str(output))
+    if silent:
+        popen = subprocess.Popen(args, stdout=subprocess.PIPE)
+        popen.wait()
+        output = popen.stdout.read()
+        with open("eyewitness.output", 'w') as f:
+            f.write(str(output))
+    else:
+        popen = subprocess.Popen(args)
+        popen.wait()
+
 
     shutil.move("eyewitness_results", dir)
     dir = os.path.join(dir, "eyewitness_results")
     shutil.move("geckodriver.log", dir)
-    shutil.move("eyewitness.output", dir)
+    if silent:
+        shutil.move("eyewitness.output", dir)
 
-
-    
+def check_whois(domain, file):
+    results = dict(whois.whois(domain))
+    with open(file, 'w') as f:
+        json.dump(results, f, default=serialize_datetime)
+    return results
 
 def check_waybackurls(host, file, with_subs=False):
     if with_subs:
@@ -93,10 +103,6 @@ def check_waybackurls(host, file, with_subs=False):
     with open(file, 'w') as f:
         json.dump(results, f)
     return results[1:]
-
-
-
-
 
 def check_nmap(domain, file):
     nm = nmap.PortScanner()
@@ -112,6 +118,8 @@ def make_dir(dir):
 def make_directories(dir, domains):
     for domain in domains:
         make_dir(os.path.join(dir, domain))
+
+
 
 
 RESULTS = "results"
@@ -135,6 +143,7 @@ def pycon(domain):
         check_waybackurls(domain, os.path.join(RESULTS, domain, "waybackurl.json"))
         check_takeover(domain, os.path.join(RESULTS, domain, "takeover.txt"),
                        stdout=os.path.join(RESULTS, domain, "takeover.out"))
+        check_whois(domain, os.path.join(RESULTS, domain, "nmap.json"))
 
         
     ic(active_domains)
@@ -176,6 +185,7 @@ def test(domain="youtube.com"):
     # check_eyewitness("results/web_domains.txt", "results")
     # ic(check_waybackurls(domain))
     # ic(check_nmap(domain, "test.txt"))
+    # ic(check_whois(domain, "test.json"))
     pycon(domain)
 
 if __name__ == "__main__":
