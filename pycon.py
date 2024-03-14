@@ -16,6 +16,7 @@ from tqdm import tqdm
 from icecream import ic
 from pythonping import ping
 
+sys.path.insert(0, os.path.join("EyeWitness", "Python"))
 
 import EyeWitness
 
@@ -66,10 +67,22 @@ def check_takeover(domain, file, threads=1, d_list=None,
                            proxy=proxy, output=file, timeout=timeout, 
                            process=process, verbose=verbose, stdout=stdout)
 
+def setArgv(args):
+    temp_argv = sys.argv
+    sys.argv = sys.argv[0:1]
+    sys.argv.extend(args)
+    return temp_argv
+
+
 def check_eyewitness(file_domains, dir, silent=False):
-    args = ("python", "EyeWitness/Python/EyeWitness.py", "-f", 
-            file_domains, "-d", "eyewitness_results", 
-            "--resolve", "--no-prompt", "--delay", "3")
+    args = ("-f", file_domains, "-d", "eyewitness_results", 
+            "--resolve", "--no-prompt", "--delay", "3", 
+            "--timeout", "60")
+
+    temp_argv = setArgv(args)
+    EyeWitness.main()
+    sys.argv = temp_argv
+    """
     if silent:
         popen = subprocess.Popen(args, stdout=subprocess.PIPE)
         popen.wait()
@@ -79,13 +92,11 @@ def check_eyewitness(file_domains, dir, silent=False):
     else:
         popen = subprocess.Popen(args)
         popen.wait()
-
+    """
 
     shutil.move("eyewitness_results", dir)
     dir = os.path.join(dir, "eyewitness_results")
     shutil.move("geckodriver.log", dir)
-    if silent:
-        shutil.move("eyewitness.output", dir)
 
 def check_whois(domain, file):
     results = dict(whois.whois(domain))
@@ -124,7 +135,8 @@ def make_directories(dir, domains):
 
 RESULTS = "results"
 def pycon(domain):
-    shutil.rmtree(RESULTS)
+    if os.path.isdir(RESULTS):
+        shutil.rmtree(RESULTS)
     make_dir(RESULTS)
     print("sublist3r")
     sublist3r_results = query_sublist3r(domain, 
@@ -182,7 +194,7 @@ def test(domain="youtube.com"):
     # ic(query_dns(domain, "dns.json"))
     # ic(ping_host(domain))
     # check_takeover(domain="youtube.com")
-    # check_eyewitness("results/web_domains.txt", "results")
+    # check_eyewitness("urls.txt")
     # ic(check_waybackurls(domain))
     # ic(check_nmap(domain, "test.txt"))
     # ic(check_whois(domain, "test.json"))
