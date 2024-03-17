@@ -75,24 +75,15 @@ def setArgv(args):
 
 
 def check_eyewitness(file_domains, dir, silent=False):
+    """
     args = ("-f", file_domains, "-d", "eyewitness_results", 
             "--resolve", "--no-prompt", "--delay", "3", 
             "--timeout", "60")
+    """
 
-    temp_argv = setArgv(args)
-    EyeWitness.main()
-    sys.argv = temp_argv
-    """
-    if silent:
-        popen = subprocess.Popen(args, stdout=subprocess.PIPE)
-        popen.wait()
-        output = popen.stdout.read()
-        with open("eyewitness.output", 'w') as f:
-            f.write(str(output))
-    else:
-        popen = subprocess.Popen(args)
-        popen.wait()
-    """
+    EyeWitness.main(f=file_domains, d="eyewitness_results", 
+                    resolve=True, no_prompt=True, delay=3, 
+                    timeout=60)
 
     shutil.move("eyewitness_results", dir)
     dir = os.path.join(dir, "eyewitness_results")
