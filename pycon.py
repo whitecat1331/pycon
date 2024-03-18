@@ -131,7 +131,6 @@ def make_dir(dir):
     if not os.path.isdir(dir):
         os.mkdir(dir)
 
-
 def make_directories(dir, domains):
     for domain in domains:
         make_dir(os.path.join(dir, domain))
@@ -147,6 +146,7 @@ def pycon(domain):
     print("sublist3r")
     sublist3r_results = query_sublist3r(domain, 
                         savefile=os.path.join(RESULTS, "sublist3r_results.txt"))
+    sublist3r_results = list(sublist3r_results)
     sublist3r_results.append(domain)
     ic(sublist3r_results)
     print("sslmate API")
