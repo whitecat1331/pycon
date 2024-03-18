@@ -113,9 +113,24 @@ def check_nmap(domain, file):
         json.dump(scan, results)
     return scan
 
+def check_sslmate(domain, file):
+    base_url = f"https://api.certspotter.com/v1/issuances?domain={domain}&expand=dns_names&expand=issuer&expand=revocation&expand=problem_reporting&expand=cert_der"
+    response = requests.get(base_url).json()
+    with open(file, 'w') as f:
+        json.dump(response, f)
+
+    dns_names = set()
+    for obj in response:
+        dns_names.update(obj["dns_names"])
+
+    return dns_names
+
+
+
 def make_dir(dir):
     if not os.path.isdir(dir):
         os.mkdir(dir)
+
 
 def make_directories(dir, domains):
     for domain in domains:
@@ -134,6 +149,9 @@ def pycon(domain):
                         savefile=os.path.join(RESULTS, "sublist3r_results.txt"))
     sublist3r_results.append(domain)
     ic(sublist3r_results)
+    print("sslmate API")
+    ssl_dns_names = check_sslmate(domain, os.path.join(RESULTS, "sslmate.json"))
+    sublist3r_results.append(ssl_dns_names)
     print("active domain filter")
     active_domains = [domain if is_alive(domain) else '' for domain in sublist3r_results]
     active_domains = list(filter(None, active_domains))
@@ -180,7 +198,7 @@ def pycon(domain):
 def main():
     pass
 
-def test(domain="youtube.com"):
+def test(domain="ring.com"):
     # ic(query_sublist3r(domain))
     # ic(query_dns(domain, "dns.json"))
     # ic(ping_host(domain))
@@ -189,6 +207,7 @@ def test(domain="youtube.com"):
     # ic(check_waybackurls(domain))
     # ic(check_nmap(domain, "test.txt"))
     # ic(check_whois(domain, "test.json"))
+    # ic(check_sslmate(domain, "sslmate.test"))
     pycon(domain)
 
 if __name__ == "__main__":
