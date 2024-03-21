@@ -1,4 +1,5 @@
 import os
+import click
 import requests
 import json
 import sys
@@ -146,14 +147,15 @@ def pycon(domain):
     print("sublist3r")
     sublist3r_results = query_sublist3r(domain, 
                         savefile=os.path.join(RESULTS, "sublist3r_results.txt"))
-    sublist3r_results = list(sublist3r_results)
-    sublist3r_results.append(domain)
+    sub_domains = list(sublist3r_results)
+    sub_domains.append(domain)
     ic(sublist3r_results)
     print("sslmate API")
     ssl_dns_names = check_sslmate(domain, os.path.join(RESULTS, "sslmate.json"))
-    sublist3r_results.append(ssl_dns_names)
+    ic(ssl_dns_names)
+    sub_domains.append(ssl_dns_names)
     print("active domain filter")
-    active_domains = [domain if is_alive(domain) else '' for domain in sublist3r_results]
+    active_domains = [domain if is_alive(domain) else '' for domain in tqdm(sub_domains)]
     active_domains = list(filter(None, active_domains))
     ic(active_domains)
     make_directories(RESULTS, active_domains)
@@ -183,7 +185,8 @@ def pycon(domain):
 
     
     
-
+# silent mode
+# out of scope list
 
 
 
@@ -194,21 +197,24 @@ def pycon(domain):
 
 
         
+@click.command()
+@click.argument("domain", type=str)
+def main(domain):
+    pycon(domain)
 
-def main():
-    pass
+
 
 def test(domain="ring.com"):
-    # ic(query_sublist3r(domain))
-    # ic(query_dns(domain, "dns.json"))
-    # ic(ping_host(domain))
-    # check_takeover(domain="youtube.com")
-    # check_eyewitness("urls.txt")
-    # ic(check_waybackurls(domain))
-    # ic(check_nmap(domain, "test.txt"))
-    # ic(check_whois(domain, "test.json"))
-    # ic(check_sslmate(domain, "sslmate.test"))
+    ic(query_sublist3r(domain))
+    ic(query_dns(domain, "dns.json"))
+    ic(ping_host(domain))
+    check_takeover(domain="youtube.com")
+    check_eyewitness("urls.txt")
+    ic(check_waybackurls(domain))
+    ic(check_nmap(domain, "test.txt"))
+    ic(check_whois(domain, "test.json"))
+    ic(check_sslmate(domain, "sslmate.test"))
     pycon(domain)
 
 if __name__ == "__main__":
-    test()
+    main()
