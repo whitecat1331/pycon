@@ -1,4 +1,8 @@
 import os
+import re
+import logging
+import tempfile
+import csv
 import click
 import requests
 import json
@@ -21,7 +25,6 @@ sys.path.insert(0, os.path.join("EyeWitness", "Python"))
 
 import EyeWitness
 
-DNS_RECORD_TYPES = ['A', 'AAAA', 'MX', 'NS', 'TXT', 'SOA']
 
 
 def serialize_datetime(obj): 
@@ -35,15 +38,24 @@ def query_sublist3r(domain, no_threads=40, savefile=None,
     return sublist3r.main(domain, no_threads, savefile, ports, silent, 
                           verbose, enable_bruteforce, engines)
 
-def query_dns(domain, file):
+PUBLIC_NAMESERVERS = [
+               "8.8.8.8", "8.8.4.4", # Google
+               "1.1.1.1", "1.0.0.1", # Cloudflare
+               "208.67.222.222", "208.67.220.220", # OpenDNS
+               "208.67.222.220", "208.67.220.222"
+]
+
+def query_dns(domain):
+    DNS_RECORD_TYPES = ['A', 'AAAA', 'MX', 'NS', 'TXT', 'SOA']
+    resolver = dns.resolver.Resolver(configure=False)
+    resolver.timeout = 60
+    resolver.lifetime = 60
+    resolver.nameservers.extend(PUBLIC_NAMESERVERS)
     info = {"domain": domain}
     for qtype in DNS_RECORD_TYPES:
-        answer = dns.resolver.resolve(domain, qtype, raise_on_no_answer=False)
+        answer = resolver.resolve(domain, qtype, raise_on_no_answer=False)
         if answer.rrset is not None:
             info[qtype] = str(answer.rrset)
-
-    with open(file, 'w') as f:
-        json.dump(info, f)
 
     return info
 
@@ -56,17 +68,17 @@ def is_alive(host, count=3, timeout=2):
     return ping_result.stats_packets_returned > 0
 
 def has_http(domain):
-    return  200 <= requests.get(f"http://{domain}").status_code < 300
+    return  200 <= requests.get(f"http://{domain}", headers={"User-Agent": "Pycon"}).status_code < 300
 
 def has_https(domain):
-    return  200 <= requests.get(f"https://{domain}").status_code < 300
+    return  200 <= requests.get(f"https://{domain}", headers={"User-Agent": "Pycon"}).status_code < 300
 
-def check_takeover(domain, file, threads=1, d_list=None, 
+def check_takeover(domains, file=None, threads=1, d_list=None, 
                    proxy=None, timeout=None, process=False, 
                    verbose=False, stdout=None):
-    takeover.takeover.main(domain=domain, threads=threads, d_list=d_list,
+    return (takeover.takeover.main(domains=domains, threads=threads, d_list=d_list,
                            proxy=proxy, output=file, timeout=timeout, 
-                           process=process, verbose=verbose, stdout=stdout)
+                           process=process, verbose=verbose))
 
 def setArgv(args):
     temp_argv = sys.argv
@@ -75,50 +87,38 @@ def setArgv(args):
     return temp_argv
 
 
-def check_eyewitness(file_domains, dir, silent=False):
-    """
-    args = ("-f", file_domains, "-d", "eyewitness_results", 
-            "--resolve", "--no-prompt", "--delay", "3", 
-            "--timeout", "60")
-    """
-
+def check_eyewitness(file_domains):
     EyeWitness.main(f=file_domains, d="eyewitness_results", 
                     resolve=True, no_prompt=True, delay=3, 
                     timeout=60)
 
-    shutil.move("eyewitness_results", dir)
-    dir = os.path.join(dir, "eyewitness_results")
-    shutil.move("geckodriver.log", dir)
 
-def check_whois(domain, file):
+def check_whois(domain):
     results = dict(whois.whois(domain))
-    with open(file, 'w') as f:
-        json.dump(results, f, default=serialize_datetime)
     return results
 
-def check_waybackurls(host, file, with_subs=False):
+def check_waybackurls(host, with_subs=False):
     if with_subs:
         url = 'http://web.archive.org/cdx/search/cdx?url=*.%s/*&output=json&fl=original&collapse=urlkey' % host
     else:
         url = 'http://web.archive.org/cdx/search/cdx?url=%s/*&output=json&fl=original&collapse=urlkey' % host
     r = requests.get(url)
     results = r.json()
-    with open(file, 'w') as f:
-        json.dump(results, f)
-    return results[1:]
+    domains = []
+    for contained_domain in results:
+        for domain in contained_domain:
+            domains.append(re.sub("http(s)?://", "", domain))
 
-def check_nmap(domain, file):
+    return domains
+
+def check_nmap(domain):
     nm = nmap.PortScanner()
     scan = nm.scan(domain, arguments='-T4')
-    with open(file, 'w') as results:
-        json.dump(scan, results)
     return scan
 
-def check_sslmate(domain, file):
+def check_sslmate(domain):
     base_url = f"https://api.certspotter.com/v1/issuances?domain={domain}&expand=dns_names&expand=issuer&expand=revocation&expand=problem_reporting&expand=cert_der"
     response = requests.get(base_url).json()
-    with open(file, 'w') as f:
-        json.dump(response, f)
 
     dns_names = set()
     for obj in response:
@@ -137,84 +137,142 @@ def make_directories(dir, domains):
         make_dir(os.path.join(dir, domain))
 
 
+def filter_out_of_scope(domains, out_of_scope_domains=None):
+    if not out_of_scope_domains:
+        return domains
+    filtered_domains = []
+    for domain in domains:
+        for out_of_scope in out_of_scope_domains:
+            reg_domain = out_of_scope.replace('.', '\\.').replace('*', ".*")
+            if re.match(reg_domain, domain):
+                filtered_domains.append(domain)
+
+    return [domain for domain in domains if domain not in filtered_domains]
+
+def scrape_subdomains(in_scope_domains):
+    all_domains = []
+    for domain in in_scope_domains:
+        all_domains.extend(list(query_sublist3r(domain)))
+        all_domains.extend(check_sslmate(domain))
+        all_domains.extend(check_waybackurls(domain, with_subs=True))
+
+    return all_domains
+
+def filter_active(all_domains):
+    active_domains = [domain if is_alive(domain) else '' for domain in all_domains]
+    return list(filter(None, active_domains))
+
+def filter_web(all_domains):
+    web_domains = [domain if (has_http(domain) or has_https(domain)) else '' for domain in all_domains]
+    return list(filter(None, web_domains))
+
+
+
+def scrape_domain_info(domain):
+    domain_info = {}
+    domain_info["domain"] = domain
+    domain_info.update(check_nmap(domain))
+    domain_info["dns"] = query_dns(domain)
+    domain_info["whois"] = check_whois(domain)
+    # domain_info["takeover"] = check_takeover(domain) 
+
+    return domain_info
+
+def scrape_domains_info(domains):
+    domains_info = []
+    for domain in tqdm(domains):
+        domains_info.append(scrape_domain_info(domain))
+    return domains_info
+
+
+def capture_web_screenshots(all_domains):
+    web_domains = filter_web(all_domains)
+    urls_handle, path = tempfile.mkstemp()
+    with open(urls_handle, 'w') as f:
+        for domain in web_domains:
+            f.write(domain + '\n')
+    check_eyewitness(path)
+    os.remove(path)
+
 
 
 RESULTS = "results"
-def pycon(domain):
+def pycon(out_of_scope_domains, in_scope_domains, output=None):
+
     if os.path.isdir(RESULTS):
         shutil.rmtree(RESULTS)
-    make_dir(RESULTS)
-    print("sublist3r")
-    sublist3r_results = query_sublist3r(domain, 
-                        savefile=os.path.join(RESULTS, "sublist3r_results.txt"))
-    sub_domains = list(sublist3r_results)
-    sub_domains.append(domain)
-    ic(sublist3r_results)
-    print("sslmate API")
-    ssl_dns_names = check_sslmate(domain, os.path.join(RESULTS, "sslmate.json"))
-    ic(ssl_dns_names)
-    sub_domains.append(ssl_dns_names)
-    print("active domain filter")
-    active_domains = [domain if is_alive(domain) else '' for domain in tqdm(sub_domains)]
-    active_domains = list(filter(None, active_domains))
-    ic(active_domains)
-    make_directories(RESULTS, active_domains)
-    print("scraping active domain info")
-    for domain in tqdm(active_domains):
-        check_nmap(domain, os.path.join(RESULTS, domain, "nmap.json"))
-        query_dns(domain, os.path.join(RESULTS, domain, "dns.json"))
-        check_waybackurls(domain, os.path.join(RESULTS, domain, "waybackurl.json"))
-        check_takeover(domain, os.path.join(RESULTS, domain, "takeover.txt"),
-                       stdout=os.path.join(RESULTS, domain, "takeover.out"))
-        check_whois(domain, os.path.join(RESULTS, domain, "nmap.json"))
 
-        
-    ic(active_domains)
-    web_domains = [domain if (has_http(domain) or has_https(domain)) else '' for domain in active_domains]
-    web_domains = list(filter(None, web_domains))
-    ic(web_domains)
+    if out_of_scope_domains:
+        out_of_scope_domains = out_of_scope_domains.read().split()
+
+    in_scope_domains = in_scope_domains.read().split()
+
+
+    # find subdomains
+    print("Find subdomains")
+    all_domains = scrape_subdomains(in_scope_domains)
+    all_domains = filter_out_of_scope(all_domains, out_of_scope_domains=out_of_scope_domains)
+    all_domains = filter_active(all_domains)
+    all_domains.extend(in_scope_domains)
+    all_domains = set(all_domains)
+    # find info for all active domains
+    print("Domain Info")
+    domains_info = scrape_domains_info(all_domains)
+    if output:
+        json.dump(domains_info, output, default=serialize_datetime)
+    print("Takeover")
+    check_takeover(domains=all_domains)
+    # take a screenshot of all web hosts domains
     print("Eyewitness")
-    web_domain_path = os.path.join(RESULTS, "web_domains.txt")
-    with open(web_domain_path, 'w') as f:
-        for domain in web_domains:
-            f.write(domain + '\n')
-
-    check_eyewitness(web_domain_path, RESULTS)
-
-
+    capture_web_screenshots(all_domains)
+    return ic(domains_info)
 
     
-    
-# silent mode
-# out of scope list
 
 
 
-
-        
-
-
-
-
-        
+# silent mode        
 @click.command()
-@click.argument("domain", type=str)
-def main(domain):
-    pycon(domain)
+@click.option("-o", "--output", "output", type=click.File('w'))
+@click.option("-oos", "--out-of-scope", "out_of_scope", type=click.File('r'))
+@click.argument("in_scope", type=click.File('r'))
+def main(output, out_of_scope, in_scope):
+    pycon(out_of_scope, in_scope, output=output)
 
 
-
-def test(domain="ring.com"):
-    ic(query_sublist3r(domain))
-    ic(query_dns(domain, "dns.json"))
-    ic(ping_host(domain))
-    check_takeover(domain="youtube.com")
-    check_eyewitness("urls.txt")
-    ic(check_waybackurls(domain))
-    ic(check_nmap(domain, "test.txt"))
-    ic(check_whois(domain, "test.json"))
-    ic(check_sslmate(domain, "sslmate.test"))
-    pycon(domain)
+def test(domain="fireblocks.com"):
+    # ic(query_sublist3r(domain))
+    # ic(query_dns(domain))
+    # ic(is_alive(domain))
+    # ic(check_takeover({'blog.fireblocks.com',
+    #               'checkout.fireblocks.com',
+    #               'community.fireblocks.com',
+    #               'developers.fireblocks.com',
+    #               'emails.fireblocks.com',
+    #               'eu.status.fireblocks.com',
+    #               'eu2.status.fireblocks.com',
+    #               'fireblocks.com',
+    #               'hireblocks.fireblocks.com',
+    #               'info.fireblocks.com',
+    #               'marketplaceapi.gcp.fireblocks.com',
+    #               'ncw-developers.fireblocks.com',
+    #               'sandbox.status.fireblocks.com',
+    #               'shopit.fireblocks.com',
+    #               'status.fireblocks.com',
+    #               'www.fireblocks.com'}))
+    # ic(check_waybackurls(domain))
+    # ic(check_nmap(domain))
+    # ic(check_whois(domain))
+    # ic(check_sslmate(domain))
+    # ic(filter_out_of_scope(["dev.example.com", "admin.example.com", "example.com", "dev.outofscope.com", "admin.outofscope.com", "admin.outofscope2.com"], 
+    #                         ["*.outofscope.com", "*.outofscope2.com"]))
+    # check_eyewitness("urls.txt")
+    # ic(scrape_subdomains([domain]))
+    # ic(scrape_domain_info(domain))
+    # ic(scrape_domains_info([domain]))
+    # capture_web_screenshots([domain])
+    # pycon(domain)
+    pass
 
 if __name__ == "__main__":
     main()
