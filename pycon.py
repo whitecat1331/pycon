@@ -45,17 +45,29 @@ PUBLIC_NAMESERVERS = [
                "208.67.222.220", "208.67.220.222"
 ]
 
-def query_dns(domain):
+def query_dns(domain, limit=3):
     DNS_RECORD_TYPES = ['A', 'AAAA', 'MX', 'NS', 'TXT', 'SOA']
     resolver = dns.resolver.Resolver(configure=False)
     resolver.timeout = 60
     resolver.lifetime = 60
     resolver.nameservers.extend(PUBLIC_NAMESERVERS)
     info = {"domain": domain}
-    for qtype in DNS_RECORD_TYPES:
-        answer = resolver.resolve(domain, qtype, raise_on_no_answer=False)
-        if answer.rrset is not None:
-            info[qtype] = str(answer.rrset)
+    success = False
+    attempts = 0
+    while not success and attempts < limit:
+        try: 
+            for qtype in DNS_RECORD_TYPES:
+                answer = resolver.resolve(domain, qtype, raise_on_no_answer=False)
+                if answer.rrset is not None:
+                    info[qtype] = str(answer.rrset)
+            success = True
+
+        except dns.resolver.LifetimeTimeout as lt:
+            print(lt)
+            print(f"attempt {attempts} out of {limit}")
+
+        attempts += 1
+
 
     return info
 
@@ -128,20 +140,13 @@ def check_sslmate(domain):
 
 
 
-def make_dir(dir):
-    if not os.path.isdir(dir):
-        os.mkdir(dir)
-
-def make_directories(dir, domains):
-    for domain in domains:
-        make_dir(os.path.join(dir, domain))
 
 
 def filter_out_of_scope(domains, out_of_scope_domains=None):
     if not out_of_scope_domains:
         return domains
     filtered_domains = []
-    for domain in domains:
+    for domain in tqdm(domains):
         for out_of_scope in out_of_scope_domains:
             reg_domain = out_of_scope.replace('.', '\\.').replace('*', ".*")
             if re.match(reg_domain, domain):
@@ -159,11 +164,11 @@ def scrape_subdomains(in_scope_domains):
     return all_domains
 
 def filter_active(all_domains):
-    active_domains = [domain if is_alive(domain) else '' for domain in all_domains]
+    active_domains = [domain if is_alive(domain) else '' for domain in tqdm(all_domains)]
     return list(filter(None, active_domains))
 
 def filter_web(all_domains):
-    web_domains = [domain if (has_http(domain) or has_https(domain)) else '' for domain in all_domains]
+    web_domains = [domain if (has_http(domain) or has_https(domain)) else '' for domain in tqdm(all_domains)]
     return list(filter(None, web_domains))
 
 
@@ -194,32 +199,48 @@ def capture_web_screenshots(all_domains):
     check_eyewitness(path)
     os.remove(path)
 
-
-
 RESULTS = "results"
 def pycon(out_of_scope_domains, in_scope_domains, output=None):
-
-    if os.path.isdir(RESULTS):
-        shutil.rmtree(RESULTS)
 
     if out_of_scope_domains:
         out_of_scope_domains = out_of_scope_domains.read().split()
 
     in_scope_domains = in_scope_domains.read().split()
 
+    directory, name = os.path.split(output.name)
+    print(directory)
+
+    if directory == '':
+        directory = RESULTS 
+
+    try:
+        os.mkdir(directory)
+    except FileExistsError as fee:
+        print(f"Directory alredy exists {fee}")
+        directory += datetime.datetime.now().strftime("_%d_%m_%Y_%H_%M_%S")
+        os.mkdir(directory)
+    finally:
+        os.chdir(directory)
+
+
 
     # find subdomains
-    print("Find subdomains")
+    print("Scrape subdomains")
     all_domains = scrape_subdomains(in_scope_domains)
+    print(f"{len(all_domains)} subdomains found")
+    print("Filter out of scope")
     all_domains = filter_out_of_scope(all_domains, out_of_scope_domains=out_of_scope_domains)
+    print("Filter active domains")
     all_domains = filter_active(all_domains)
     all_domains.extend(in_scope_domains)
-    all_domains = set(all_domains)
+    print("All Domains")
+    all_domains = ic(set(all_domains))
     # find info for all active domains
     print("Domain Info")
     domains_info = scrape_domains_info(all_domains)
     if output:
-        json.dump(domains_info, output, default=serialize_datetime)
+        with open(name, "w") as f:
+            json.dump(domains_info, f, default=serialize_datetime)
     print("Takeover")
     check_takeover(domains=all_domains)
     # take a screenshot of all web hosts domains
@@ -228,7 +249,6 @@ def pycon(out_of_scope_domains, in_scope_domains, output=None):
     return ic(domains_info)
 
     
-
 
 
 # silent mode        
