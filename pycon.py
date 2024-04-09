@@ -43,7 +43,7 @@ def serialize_datetime(obj: datetime.datetime) -> str:
     raise TypeError("Type not serializable") 
 
 def query_sublist3r(domain: str, no_threads: int = 40, savefile: str = None,
-                  ports: List[int] = None, silent: bool = True, verbose: bool = False, 
+                  ports: List[int] = None, silent: bool = True, verbose: bool = True, 
                   enable_bruteforce: bool = False, engines: List[str] = None) -> List[str]:
     """
     Queries Sublist3r for subdomains of a given domain.
@@ -122,6 +122,7 @@ def is_alive(host: str, count: int = 3, timeout: int = 2) -> bool:
     try:
         ping_result = ping(target=host, count=count, timeout=timeout)
     except Exception as e:
+        print(e)
         return False
 
     return ping_result.stats_packets_returned > 0
@@ -136,7 +137,11 @@ def has_http(domain: str) -> bool:
     Returns:
         bool: True if HTTP service is available, False otherwise.
     """
-    return  200 <= requests.get(f"http://{domain}", headers={"User-Agent": "Pycon"}).status_code < 300
+    try:
+        return  200 <= requests.get(f"http://{domain}", headers={"User-Agent": "Pycon"}).status_code < 300
+    except requests.exceptions.ConnectionError as reC:
+        print("HTTP Not Found", reC)
+    return False
 
 def has_https(domain: str) -> bool:
     """
@@ -148,7 +153,14 @@ def has_https(domain: str) -> bool:
     Returns:
         bool: True if HTTPS service is available, False otherwise.
     """
-    return  200 <= requests.get(f"https://{domain}", headers={"User-Agent": "Pycon"}).status_code < 300
+    try:
+        return  200 <= requests.get(f"https://{domain}", headers={"User-Agent": "Pycon"}).status_code < 300
+    except requests.exceptions.ConnectionError as reC:
+        print("HTTPS Not Found", reC)
+    return False
+
+
+
 
 
 def check_takeover(domains: List[str], file: str = None, threads: int = 1, d_list: List[str] = None, 
@@ -185,9 +197,13 @@ def check_eyewitness(file_domains: str) -> None:
     Returns:
         None
     """
-    EyeWitness.main(f=file_domains, d="eyewitness_results", 
+    try:
+        EyeWitness.main(f=file_domains, d="eyewitness_results", 
                     resolve=True, no_prompt=True, delay=3, 
                     timeout=60)
+    except requests.exceptions.ConnectionError as reC:
+        print(reC)
+
 
 
 def check_whois(domain: str) -> Dict[str, Union[str, List[str]]]:
@@ -251,10 +267,17 @@ def check_sslmate(domain: str) -> set:
     Returns:
         set: Set of DNS names associated with the SSL certificate.
     """
+    dns_names = set()
     base_url = f"https://api.certspotter.com/v1/issuances?domain={domain}&expand=dns_names&expand=issuer&expand=revocation&expand=problem_reporting&expand=cert_der"
     response = requests.get(base_url).json()
 
-    dns_names = set()
+    if not response:
+        return {}
+
+    if isinstance(response, dict) and response["code"] == "rate_limited":
+        return {}
+
+
     for obj in response:
         dns_names.update(obj["dns_names"])
 
@@ -294,10 +317,10 @@ def scrape_subdomains(in_scope_domains: List[str]) -> List[str]:
         List[str]: List of scraped subdomains.
     """
     all_domains = []
-    for domain in in_scope_domains:
+    for domain in tqdm(in_scope_domains):
         all_domains.extend(list(query_sublist3r(domain)))
         all_domains.extend(check_sslmate(domain))
-        all_domains.extend(check_waybackurls(domain, with_subs=True))
+        # all_domains.extend(check_waybackurls(domain, with_subs=True))
 
     return all_domains
 
@@ -399,7 +422,6 @@ def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: 
     in_scope_domains = in_scope_domains.read().split()
 
     directory, name = os.path.split(output.name)
-    print(directory)
 
     if directory == '':
         directory = RESULTS 
@@ -409,6 +431,7 @@ def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: 
     except FileExistsError as fee:
         print(f"Directory alredy exists {fee}")
         directory += datetime.datetime.now().strftime("_%d_%m_%Y_%H_%M_%S")
+        print(f"Creating new directory {directory}")
         os.mkdir(directory)
     finally:
         os.chdir(directory)
@@ -493,3 +516,4 @@ def test() -> None:
 
 if __name__ == "__main__":
     main()
+
