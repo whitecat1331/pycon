@@ -17,6 +17,7 @@ import traceback
 import whois
 import datetime
 from tqdm import tqdm 
+from typing import *
 
 from icecream import ic
 from pythonping import ping
@@ -27,14 +28,39 @@ import EyeWitness
 
 
 
-def serialize_datetime(obj): 
+def serialize_datetime(obj: datetime.datetime) -> str:  
+    """
+    Serializes a datetime object to ISO format for JSON serialization.
+    
+    Parameters:
+        obj (datetime.datetime): The datetime object to serialize.
+        
+    Returns:
+        str: The serialized datetime object.
+    """
     if isinstance(obj, datetime.datetime): 
         return obj.isoformat() 
     raise TypeError("Type not serializable") 
 
-def query_sublist3r(domain, no_threads=40, savefile=None,
-                  ports=None, silent=True, verbose=False, 
-                  enable_bruteforce=False, engines=None):
+def query_sublist3r(domain: str, no_threads: int = 40, savefile: str = None,
+                  ports: List[int] = None, silent: bool = True, verbose: bool = False, 
+                  enable_bruteforce: bool = False, engines: List[str] = None) -> List[str]:
+    """
+    Queries Sublist3r for subdomains of a given domain.
+    
+    Parameters:
+        domain (str): The target domain to enumerate subdomains for.
+        no_threads (int): Number of threads to use for parallel subdomain enumeration (default is 40).
+        savefile (str): File to save the results (default is None).
+        ports (list): Ports to scan for in subdomain enumeration (default is None).
+        silent (bool): Whether to run Sublist3r silently (default is True).
+        verbose (bool): Whether to enable verbose mode in Sublist3r (default is False).
+        enable_bruteforce (bool): Whether to enable bruteforce subdomain enumeration in Sublist3r (default is False).
+        engines (list): Subdomain search engines to use (default is None).
+    
+    Returns:
+        list: List of subdomains found.
+    """
     return sublist3r.main(domain, no_threads, savefile, ports, silent, 
                           verbose, enable_bruteforce, engines)
 
@@ -45,7 +71,17 @@ PUBLIC_NAMESERVERS = [
                "208.67.222.220", "208.67.220.222"
 ]
 
-def query_dns(domain, limit=3):
+def query_dns(domain: str, limit: int=3)-> Dict[str, Union[str, Dict[str, str]]]:
+    """
+    Performs DNS queries for various record types for a given domain.
+    
+    Parameters:
+        domain (str): The target domain to query DNS records for.
+        limit (int): Number of attempts to make for each DNS query (default is 3).
+    
+    Returns:
+        dict: Dictionary containing domain information including DNS records.
+    """
     DNS_RECORD_TYPES = ['A', 'AAAA', 'MX', 'NS', 'TXT', 'SOA']
     resolver = dns.resolver.Resolver(configure=False)
     resolver.timeout = 60
@@ -71,7 +107,18 @@ def query_dns(domain, limit=3):
 
     return info
 
-def is_alive(host, count=3, timeout=2):
+def is_alive(host: str, count: int = 3, timeout: int = 2) -> bool:
+    """
+    Checks if a host is alive by sending ICMP ping packets.
+    
+    Parameters:
+        host (str): The target host to check.
+        count (int): Number of ping packets to send (default is 3).
+        timeout (int): Timeout in seconds for each ping packet (default is 2).
+    
+    Returns:
+        bool: True if the host is alive, False otherwise.
+    """
     try:
         ping_result = ping(target=host, count=count, timeout=timeout)
     except Exception as e:
@@ -79,37 +126,94 @@ def is_alive(host, count=3, timeout=2):
 
     return ping_result.stats_packets_returned > 0
 
-def has_http(domain):
+def has_http(domain: str) -> bool:
+    """
+    Checks if HTTP service is available for a given domain.
+    
+    Parameters:
+        domain (str): The target domain to check.
+    
+    Returns:
+        bool: True if HTTP service is available, False otherwise.
+    """
     return  200 <= requests.get(f"http://{domain}", headers={"User-Agent": "Pycon"}).status_code < 300
 
-def has_https(domain):
+def has_https(domain: str) -> bool:
+    """
+    Checks if HTTPS service is available for a given domain.
+    
+    Parameters:
+        domain (str): The target domain to check.
+    
+    Returns:
+        bool: True if HTTPS service is available, False otherwise.
+    """
     return  200 <= requests.get(f"https://{domain}", headers={"User-Agent": "Pycon"}).status_code < 300
 
-def check_takeover(domains, file=None, threads=1, d_list=None, 
-                   proxy=None, timeout=None, process=False, 
-                   verbose=False, stdout=None):
+
+def check_takeover(domains: List[str], file: str = None, threads: int = 1, d_list: List[str] = None, 
+                   proxy: str = None, timeout: int = None, process: bool = False, 
+                   verbose: bool = False, stdout: str = None) -> str:
+    """
+    Checks for potential subdomain takeover vulnerabilities.
+    
+    Parameters:
+        domains (List[str]): List of domains to check for takeover vulnerabilities.
+        file (str): File to save the output (default is None).
+        threads (int): Number of threads to use for checking (default is 1).
+        d_list (List[str]): List of domains to check for takeover vulnerabilities (default is None).
+        proxy: Proxy server to use for the request (default is None).
+        timeout (int): Timeout in seconds for each request (default is None).
+        process (bool): Whether to process the input list of domains (default is False).
+        verbose (bool): Whether to enable verbose mode (default is False).
+        stdout (str): File object to redirect output to (default is None).
+    
+    Returns:
+        str: Output of the takeover check.
+    """
     return (takeover.takeover.main(domains=domains, threads=threads, d_list=d_list,
                            proxy=proxy, output=file, timeout=timeout, 
                            process=process, verbose=verbose))
 
-def setArgv(args):
-    temp_argv = sys.argv
-    sys.argv = sys.argv[0:1]
-    sys.argv.extend(args)
-    return temp_argv
-
-
-def check_eyewitness(file_domains):
+def check_eyewitness(file_domains: str) -> None:
+    """
+    Captures screenshots of web pages associated with specified domains using EyeWitness.
+    
+    Parameters:
+        file_domains (str): File containing a list of domains to capture screenshots for.
+    
+    Returns:
+        None
+    """
     EyeWitness.main(f=file_domains, d="eyewitness_results", 
                     resolve=True, no_prompt=True, delay=3, 
                     timeout=60)
 
 
-def check_whois(domain):
+def check_whois(domain: str) -> Dict[str, Union[str, List[str]]]:
+    """
+    Retrieves WHOIS information for a given domain.
+    
+    Parameters:
+        domain (str): The target domain to retrieve WHOIS information for.
+    
+    Returns:
+        Dict[str, Union[str, List[str]]]: WHOIS information as a dictionary.
+    """
     results = dict(whois.whois(domain))
     return results
 
-def check_waybackurls(host, with_subs=False):
+def check_waybackurls(host: str, with_subs: bool = False) -> List[str]:
+    """
+    Queries the Wayback Machine for archived URLs associated with a given host.
+    
+    Parameters:
+        host (str): The target host to query Wayback Machine for.
+        with_subs (bool): Whether to include subdomains in the query (default is False).
+    
+    Returns:
+        List[str]: List of archived URLs.
+    """
     if with_subs:
         url = 'http://web.archive.org/cdx/search/cdx?url=*.%s/*&output=json&fl=original&collapse=urlkey' % host
     else:
@@ -123,12 +227,30 @@ def check_waybackurls(host, with_subs=False):
 
     return domains
 
-def check_nmap(domain):
+def check_nmap(domain: str) -> Dict[str, Dict[str, Union[str, Dict[str, Union[str, int]]]]]:
+    """
+    Performs a port scan on a given domain using nmap.
+    
+    Parameters:
+        domain (str): The target domain to perform the port scan on.
+    
+    Returns:
+        Dict[str, Dict[str, Union[str, Dict[str, Union[str, int]]]]]: Scan results.
+    """
     nm = nmap.PortScanner()
     scan = nm.scan(domain, arguments='-T4')
     return scan
 
-def check_sslmate(domain):
+def check_sslmate(domain: str) -> set:
+    """
+    Retrieves SSL certificate information for a given domain using certspotter.
+    
+    Parameters:
+        domain (str): The target domain to retrieve SSL certificate information for.
+    
+    Returns:
+        set: Set of DNS names associated with the SSL certificate.
+    """
     base_url = f"https://api.certspotter.com/v1/issuances?domain={domain}&expand=dns_names&expand=issuer&expand=revocation&expand=problem_reporting&expand=cert_der"
     response = requests.get(base_url).json()
 
@@ -139,10 +261,17 @@ def check_sslmate(domain):
     return dns_names
 
 
-
-
-
-def filter_out_of_scope(domains, out_of_scope_domains=None):
+def filter_out_of_scope(domains: List[str], out_of_scope_domains: List[str] = None) -> List[str]:
+    """
+    Filters out-of-scope domains from a list of domains.
+    
+    Parameters:
+        domains (List[str]): List of domains to filter.
+        out_of_scope_domains (List[str]): List of out-of-scope domains (default is None).
+    
+    Returns:
+        List[str]: Filtered list of domains.
+    """
     if not out_of_scope_domains:
         return domains
     filtered_domains = []
@@ -154,7 +283,16 @@ def filter_out_of_scope(domains, out_of_scope_domains=None):
 
     return [domain for domain in domains if domain not in filtered_domains]
 
-def scrape_subdomains(in_scope_domains):
+def scrape_subdomains(in_scope_domains: List[str]) -> List[str]:
+    """
+    Scrapes subdomains using various techniques for a list of in-scope domains.
+    
+    Parameters:
+        in_scope_domains (List[str]): List of in-scope domains to scrape subdomains for.
+    
+    Returns:
+        List[str]: List of scraped subdomains.
+    """
     all_domains = []
     for domain in in_scope_domains:
         all_domains.extend(list(query_sublist3r(domain)))
@@ -163,17 +301,42 @@ def scrape_subdomains(in_scope_domains):
 
     return all_domains
 
-def filter_active(all_domains):
+def filter_active(all_domains: List[str]) -> List[str]:
+    """
+    Filters active domains from a list of domains.
+    
+    Parameters:
+        all_domains (List[str]): List of domains to filter.
+    
+    Returns:
+        List[str]: Filtered list of active domains.
+    """
     active_domains = [domain if is_alive(domain) else '' for domain in tqdm(all_domains)]
     return list(filter(None, active_domains))
 
-def filter_web(all_domains):
+def filter_web(all_domains: List[str]) -> List[str]:
+    """
+    Filters domains with HTTP/HTTPS services from a list of domains.
+    
+    Parameters:
+        all_domains (List[str]): List of domains to filter.
+    
+    Returns:
+        List[str]: Filtered list of domains with HTTP/HTTPS services.
+    """
     web_domains = [domain if (has_http(domain) or has_https(domain)) else '' for domain in tqdm(all_domains)]
     return list(filter(None, web_domains))
 
-
-
-def scrape_domain_info(domain):
+def scrape_domain_info(domain: str) -> Dict[str, Union[str, Dict[str, Union[str, int]]]]:
+    """
+    Scrapes information for a single domain.
+    
+    Parameters:
+        domain (str): The target domain to scrape information for.
+    
+    Returns:
+        Dict[str, Union[str, Dict[str, Union[str, int]]]]: Dictionary containing information about the domain.
+    """
     domain_info = {}
     domain_info["domain"] = domain
     domain_info.update(check_nmap(domain))
@@ -183,14 +346,32 @@ def scrape_domain_info(domain):
 
     return domain_info
 
-def scrape_domains_info(domains):
+def scrape_domains_info(domains: List[str]) -> List[Dict[str, Union[str, Dict[str, Union[str, int]]]]]:
+    """
+    Scrapes information for multiple domains.
+    
+    Parameters:
+        domains (List[str]): List of domains to scrape information for.
+    
+    Returns:
+        List[Dict[str, Union[str, Dict[str, Union[str, int]]]]]: List of dictionaries containing information about the domains.
+    """
     domains_info = []
     for domain in tqdm(domains):
         domains_info.append(scrape_domain_info(domain))
     return domains_info
 
 
-def capture_web_screenshots(all_domains):
+def capture_web_screenshots(all_domains: List[str]) -> None:
+    """
+    Captures screenshots of web pages associated with specified domains.
+    
+    Parameters:
+        all_domains (List[str]): List of domains to capture screenshots for.
+    
+    Returns:
+        None
+    """
     web_domains = filter_web(all_domains)
     urls_handle, path = tempfile.mkstemp()
     with open(urls_handle, 'w') as f:
@@ -200,8 +381,18 @@ def capture_web_screenshots(all_domains):
     os.remove(path)
 
 RESULTS = "results"
-def pycon(out_of_scope_domains, in_scope_domains, output=None):
-
+def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: str = None) -> List[Dict[str, Union[str, Dict[str, Union[str, int]]]]]:
+    """
+    Main function to orchestrate the entire security assessment process.
+    
+    Parameters:
+        out_of_scope_domains (List[str]): List of out-of-scope domains.
+        in_scope_domains (List[str]): List of in-scope domains.
+        output (str): Output file to save the results (default is None).
+    
+    Returns:
+        List[Dict[str, Union[str, Dict[str, Union[str, int]]]]]: List of dictionaries containing information about the domains.
+    """
     if out_of_scope_domains:
         out_of_scope_domains = out_of_scope_domains.read().split()
 
@@ -256,41 +447,47 @@ def pycon(out_of_scope_domains, in_scope_domains, output=None):
 @click.option("-o", "--output", "output", type=click.File('w'))
 @click.option("-oos", "--out-of-scope", "out_of_scope", type=click.File('r'))
 @click.argument("in_scope", type=click.File('r'))
-def main(output, out_of_scope, in_scope):
+def main(output: str, out_of_scope: str, in_scope: str) -> None:
+    """
+    Command-line interface for running Pycon security assessment tool.
+    
+    Parameters:
+        output (str): Output file to save the results.
+        out_of_scope (str): File containing a list of out-of-scope domains.
+        in_scope (str): File containing a list of in-scope domains.
+    
+    Returns:
+        None
+    """
     pycon(out_of_scope, in_scope, output=output)
 
-
-def test(domain="fireblocks.com"):
-    # ic(query_sublist3r(domain))
-    # ic(query_dns(domain))
-    # ic(is_alive(domain))
-    # ic(check_takeover({'blog.fireblocks.com',
-    #               'checkout.fireblocks.com',
-    #               'community.fireblocks.com',
-    #               'developers.fireblocks.com',
-    #               'emails.fireblocks.com',
-    #               'eu.status.fireblocks.com',
-    #               'eu2.status.fireblocks.com',
-    #               'fireblocks.com',
-    #               'hireblocks.fireblocks.com',
-    #               'info.fireblocks.com',
-    #               'marketplaceapi.gcp.fireblocks.com',
-    #               'ncw-developers.fireblocks.com',
-    #               'sandbox.status.fireblocks.com',
-    #               'shopit.fireblocks.com',
-    #               'status.fireblocks.com',
-    #               'www.fireblocks.com'}))
-    # ic(check_waybackurls(domain))
-    # ic(check_nmap(domain))
-    # ic(check_whois(domain))
-    # ic(check_sslmate(domain))
-    # ic(filter_out_of_scope(["dev.example.com", "admin.example.com", "example.com", "dev.outofscope.com", "admin.outofscope.com", "admin.outofscope2.com"], 
-    #                         ["*.outofscope.com", "*.outofscope2.com"]))
-    # check_eyewitness("urls.txt")
-    # ic(scrape_subdomains([domain]))
-    # ic(scrape_domain_info(domain))
-    # ic(scrape_domains_info([domain]))
-    # capture_web_screenshots([domain])
+def test() -> None:
+    """
+    Test function to demonstrate individual functionalities of the Pycon tool using environment variables.
+    Must have the environment variable DOMAIN set. 
+    
+    Returns:
+        None
+    """
+    from dotenv import load_dotenv
+    load_dotenv()
+    domain = os.getenv("DOMAIN")
+    domains = [domain]
+    ic(query_sublist3r(domain))
+    ic(query_dns(domain))
+    ic(is_alive(domain))
+    ic(check_takeover(domains))
+    ic(check_waybackurls(domain))
+    ic(check_nmap(domain))
+    ic(check_whois(domain))
+    ic(check_sslmate(domain))
+    ic(filter_out_of_scope(["dev.example.com", "admin.example.com", "example.com", "dev.outofscope.com", "admin.outofscope.com", "admin.outofscope2.com"], 
+                            ["*.outofscope.com", "*.outofscope2.com"]))
+    ic(scrape_subdomains(domains))
+    ic(scrape_domain_info(domain))
+    ic(scrape_domains_info(domains))
+    # this will also call check_eyewitness
+    capture_web_screenshots(domains)
     # pycon(domain)
     pass
 
