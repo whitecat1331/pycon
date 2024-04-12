@@ -235,30 +235,6 @@ def check_whois(domain: str) -> Dict[str, Union[str, List[str]]]:
     results = dict(whois.whois(domain))
     return results
 
-def check_waybackurls(host: str, with_subs: bool = False) -> List[str]:
-    """
-    Queries the Wayback Machine for archived URLs associated with a given host.
-    
-    Parameters:
-        host (str): The target host to query Wayback Machine for.
-        with_subs (bool): Whether to include subdomains in the query (default is False).
-    
-    Returns:
-        List[str]: List of archived URLs.
-    """
-    if with_subs:
-        url = 'http://web.archive.org/cdx/search/cdx?url=*.%s/*&output=json&fl=original&collapse=urlkey' % host
-    else:
-        url = 'http://web.archive.org/cdx/search/cdx?url=%s/*&output=json&fl=original&collapse=urlkey' % host
-    r = requests.get(url)
-    results = r.json()
-    domains = []
-    for contained_domain in results:
-        for domain in contained_domain:
-            domains.append(re.sub("http(s)?://", "", domain))
-
-    return domains
-
 def check_nmap(domain: str) -> Dict[str, Dict[str, Union[str, Dict[str, Union[str, int]]]]]:
     """
     Performs a port scan on a given domain using nmap.
@@ -336,7 +312,6 @@ def scrape_subdomains(in_scope_domains: List[str]) -> List[str]:
     for domain in tqdm(in_scope_domains):
         all_domains.extend(list(query_sublist3r(domain)))
         all_domains.extend(check_sslmate(domain))
-        # all_domains.extend(check_waybackurls(domain, with_subs=True))
 
     return all_domains
 
@@ -400,18 +375,39 @@ def scrape_domains_info(domains: List[str]) -> List[Dict[str, Union[str, Dict[st
         domains_info.append(scrape_domain_info(domain))
     return domains_info
 
+def filter_wildcard(domains: List[str]) -> List[str]:
+    """
+    Replace all wildcard domains with
 
-def capture_web_screenshots(all_domains: List[str]) -> None:
+    Parameters:
+        domains (List[str]): List of domains to scrape information for.
+
+    Returns:
+        List[str]: List of strings containing filtered strings
+    """
+    filtered_domains = []
+    for domain in domains:
+        filtered_domains.append(domain.replace("*.", ""))
+
+
+    return filtered_domains
+
+
+
+def capture_web_screenshots(all_domains: List[str], out_of_scope_domains: List[str]) -> None:
     """
     Captures screenshots of web pages associated with specified domains.
     
     Parameters:
         all_domains (List[str]): List of domains to capture screenshots for.
+        out_of_scope_domains (List[str]): List of out-of-scope domains.
     
     Returns:
         None
     """
-    web_domains = filter_web(all_domains)
+    # filter again in case we capture out of scope domains
+    filter_out_of_scope(web_domains, out_of_scope_domains)
+    web_domains = filter_web(web_domains)
     urls_handle, path = tempfile.mkstemp()
     with open(urls_handle, 'w') as f:
         for domain in web_domains:
