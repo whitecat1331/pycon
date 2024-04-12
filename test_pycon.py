@@ -19,7 +19,6 @@ def test() -> None:
     ic(query_dns(domain))
     ic(is_alive(domain))
     ic(check_takeover(domains))
-    ic(check_waybackurls(domain))
     ic(check_nmap(domain))
     ic(check_whois(domain))
     ic(check_sslmate(domain))
