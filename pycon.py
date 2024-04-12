@@ -415,6 +415,12 @@ def capture_web_screenshots(all_domains: List[str], out_of_scope_domains: List[s
     check_eyewitness(path)
     os.remove(path)
 
+def filter_urls(domains: List[str]) -> List[str]:
+    fil_domains = []
+    for domain in domains:
+        fil_domains.append(re.sub("http(s)?://", "", domain))
+    return fil_domains
+
 RESULTS = "results"
 def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: str = None) -> List[Dict[str, Union[str, Dict[str, Union[str, int]]]]]:
     """
@@ -430,8 +436,12 @@ def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: 
     """
     if out_of_scope_domains:
         out_of_scope_domains = out_of_scope_domains.read().split()
+        out_of_scope_domains = filter_urls(out_of_scope_domains)
 
     in_scope_domains = in_scope_domains.read().split()
+    in_scope_domains = filter_wildcard(in_scope_domains)
+    in_scope_domains = filter_urls(in_scope_domains)
+
 
     directory, name = os.path.split(output.name)
 
@@ -461,6 +471,8 @@ def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: 
     all_domains = filter_out_of_scope(all_domains, out_of_scope_domains=out_of_scope_domains)
     click.echo("Filter active domains")
     all_domains = filter_active(all_domains)
+    # add back any in scope domains that were removed during the out of scope filter
+    # this ensures single in scope domains have more precedence than wild card out of scope domains
     all_domains.extend(in_scope_domains)
     all_domains = set(all_domains)
     click.echo(f"All Domains\n{all_domains}")
