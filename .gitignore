@@ -163,3 +163,4 @@ cython_debug/
 urls.txt
 
 scopes*
+pycon.log
