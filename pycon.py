@@ -17,15 +17,17 @@ import traceback
 import whois
 import datetime
 from tqdm import tqdm 
+from pythonping import ping
 from typing import *
 
-from icecream import ic
-from pythonping import ping
-
 sys.path.insert(0, os.path.join("EyeWitness", "Python"))
-
 import EyeWitness
 
+logging.basicConfig(filename="pycon.log",
+                    format='%(asctime)s %(message)s',
+                    filemode='w')
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
 
 
 def serialize_datetime(obj: datetime.datetime) -> str:  
@@ -99,10 +101,16 @@ def query_dns(domain: str, limit: int=3)-> Dict[str, Union[str, Dict[str, str]]]
             success = True
 
         except dns.resolver.LifetimeTimeout as lt:
-            print(lt)
-            print(f"attempt {attempts} out of {limit}")
-
+            logging.info(f"{lt}\nattempt {attempts} out of {limit}")
+        except Exception as e:
+            logging.error(e)
         attempts += 1
+
+
+
+    if attempts >= limit and not success:
+        logging.warning(f"Attempt limit for {domain} reached.")
+        logging.debug(f"Info: {info}\nAttempts: {attempts}\nLimit{limit}")
 
 
     return info
@@ -121,13 +129,13 @@ def is_alive(host: str, count: int = 3, timeout: int = 2) -> bool:
     """
     try:
         ping_result = ping(target=host, count=count, timeout=timeout)
+        return ping_result.stats_packets_returned > 0
     except Exception as e:
-        print(e)
-        return False
+        logging.error(e)
+    return False
 
-    return ping_result.stats_packets_returned > 0
 
-def has_http(domain: str) -> bool:
+def has_http(domain: str, scheme="http://") -> bool:
     """
     Checks if HTTP service is available for a given domain.
     
@@ -138,9 +146,12 @@ def has_http(domain: str) -> bool:
         bool: True if HTTP service is available, False otherwise.
     """
     try:
-        return  200 <= requests.get(f"http://{domain}", headers={"User-Agent": "Pycon"}).status_code < 300
+        return  200 <= requests.get(scheme + domain, headers={"User-Agent": "Pycon"}).status_code < 300
     except requests.exceptions.ConnectionError as reC:
-        print("HTTP Not Found", reC)
+        logging.info("HTTP Not Found", reC)
+    except Exception as e:
+        logging.error(e)
+
     return False
 
 def has_https(domain: str) -> bool:
@@ -156,7 +167,10 @@ def has_https(domain: str) -> bool:
     try:
         return  200 <= requests.get(f"https://{domain}", headers={"User-Agent": "Pycon"}).status_code < 300
     except requests.exceptions.ConnectionError as reC:
-        print("HTTPS Not Found", reC)
+        logging.info("HTTPS Not Found", reC)
+    except Exception as e:
+        logging.error(e)
+
     return False
 
 
@@ -202,7 +216,9 @@ def check_eyewitness(file_domains: str) -> None:
                     resolve=True, no_prompt=True, delay=3, 
                     timeout=60)
     except requests.exceptions.ConnectionError as reC:
-        print(reC)
+        logging.info(reC)
+    except Exception as e:
+        logging.error(e)
 
 
 
@@ -429,38 +445,42 @@ def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: 
     try:
         os.mkdir(directory)
     except FileExistsError as fee:
-        print(f"Directory alredy exists {fee}")
+        logging.info(f"Directory alredy exists {fee}")
         directory += datetime.datetime.now().strftime("_%d_%m_%Y_%H_%M_%S")
-        print(f"Creating new directory {directory}")
+        logging.info(f"Creating new directory {directory}")
         os.mkdir(directory)
+    except Exception as e:
+        logging.critical(e)
+        sys.exit(1)
     finally:
         os.chdir(directory)
 
 
 
     # find subdomains
-    print("Scrape subdomains")
+    click.echo("Scrape subdomains")
     all_domains = scrape_subdomains(in_scope_domains)
-    print(f"{len(all_domains)} subdomains found")
-    print("Filter out of scope")
+    click.echo(f"{len(all_domains)} subdomains found")
+    click.echo("Filter out of scope")
     all_domains = filter_out_of_scope(all_domains, out_of_scope_domains=out_of_scope_domains)
-    print("Filter active domains")
+    click.echo("Filter active domains")
     all_domains = filter_active(all_domains)
     all_domains.extend(in_scope_domains)
-    print("All Domains")
-    all_domains = ic(set(all_domains))
+    all_domains = set(all_domains)
+    click.echo(f"All Domains\n{all_domains}")
     # find info for all active domains
-    print("Domain Info")
+    click.echo("Domain Info")
     domains_info = scrape_domains_info(all_domains)
+    click.echo(domains_info)
     if output:
         with open(name, "w") as f:
             json.dump(domains_info, f, default=serialize_datetime)
-    print("Takeover")
+    click.echo("Takeover")
     check_takeover(domains=all_domains)
     # take a screenshot of all web hosts domains
-    print("Eyewitness")
+    click.echo("Eyewitness")
     capture_web_screenshots(all_domains)
-    return ic(domains_info)
+    return domains_info
 
     
 
@@ -484,35 +504,6 @@ def main(output: str, out_of_scope: str, in_scope: str) -> None:
     """
     pycon(out_of_scope, in_scope, output=output)
 
-def test() -> None:
-    """
-    Test function to demonstrate individual functionalities of the Pycon tool using environment variables.
-    Must have the environment variable DOMAIN set. 
-    
-    Returns:
-        None
-    """
-    from dotenv import load_dotenv
-    load_dotenv()
-    domain = os.getenv("DOMAIN")
-    domains = [domain]
-    ic(query_sublist3r(domain))
-    ic(query_dns(domain))
-    ic(is_alive(domain))
-    ic(check_takeover(domains))
-    ic(check_waybackurls(domain))
-    ic(check_nmap(domain))
-    ic(check_whois(domain))
-    ic(check_sslmate(domain))
-    ic(filter_out_of_scope(["dev.example.com", "admin.example.com", "example.com", "dev.outofscope.com", "admin.outofscope.com", "admin.outofscope2.com"], 
-                            ["*.outofscope.com", "*.outofscope2.com"]))
-    ic(scrape_subdomains(domains))
-    ic(scrape_domain_info(domain))
-    ic(scrape_domains_info(domains))
-    # this will also call check_eyewitness
-    capture_web_screenshots(domains)
-    # pycon(domain)
-    pass
 
 if __name__ == "__main__":
     main()
