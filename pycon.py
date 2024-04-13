@@ -23,11 +23,6 @@ from typing import *
 sys.path.insert(0, os.path.join("EyeWitness", "Python"))
 import EyeWitness
 
-logging.basicConfig(filename="pycon.log",
-                    format='%(asctime)s %(message)s',
-                    filemode='w')
-logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
 
 
 def serialize_datetime(obj: datetime.datetime) -> str:  
@@ -266,7 +261,7 @@ def check_sslmate(domain: str) -> set:
     if not response:
         return {}
 
-    if isinstance(response, dict) and response["code"] == "rate_limited":
+    if isinstance(response, dict):
         return {}
 
 
@@ -353,10 +348,13 @@ def scrape_domain_info(domain: str) -> Dict[str, Union[str, Dict[str, Union[str,
     """
     domain_info = {}
     domain_info["domain"] = domain
+    global print
+    tmpprint = print
+    print = logging.info
     domain_info.update(check_nmap(domain))
     domain_info["dns"] = query_dns(domain)
     domain_info["whois"] = check_whois(domain)
-    # domain_info["takeover"] = check_takeover(domain) 
+    print = tmpprint
 
     return domain_info
 
@@ -394,7 +392,7 @@ def filter_wildcard(domains: List[str]) -> List[str]:
 
 
 
-def capture_web_screenshots(all_domains: List[str], out_of_scope_domains: List[str]) -> None:
+def capture_web_screenshots(all_domains: List[str]) -> None:
     """
     Captures screenshots of web pages associated with specified domains.
     
@@ -405,9 +403,8 @@ def capture_web_screenshots(all_domains: List[str], out_of_scope_domains: List[s
     Returns:
         None
     """
-    # filter again in case we capture out of scope domains
-    filter_out_of_scope(web_domains, out_of_scope_domains)
-    web_domains = filter_web(web_domains)
+    # filter again in case capture out of scope domains
+    web_domains = filter_web(all_domains)
     urls_handle, path = tempfile.mkstemp()
     with open(urls_handle, 'w') as f:
         for domain in web_domains:
@@ -422,6 +419,7 @@ def filter_urls(domains: List[str]) -> List[str]:
     return fil_domains
 
 RESULTS = "results"
+# output is a click.File type which is converted to a string
 def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: str = None) -> List[Dict[str, Union[str, Dict[str, Union[str, int]]]]]:
     """
     Main function to orchestrate the entire security assessment process.
@@ -443,7 +441,7 @@ def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: 
     in_scope_domains = filter_urls(in_scope_domains)
 
 
-    directory, name = os.path.split(output.name)
+    directory, name = os.path.split(output)
 
     if directory == '':
         directory = RESULTS 
@@ -451,15 +449,20 @@ def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: 
     try:
         os.mkdir(directory)
     except FileExistsError as fee:
-        logging.info(f"Directory alredy exists {fee}")
+        print(f"Directory alredy exists {fee}")
         directory += datetime.datetime.now().strftime("_%d_%m_%Y_%H_%M_%S")
-        logging.info(f"Creating new directory {directory}")
+        print(f"Creating new directory {directory}")
         os.mkdir(directory)
     except Exception as e:
-        logging.critical(e)
         sys.exit(1)
     finally:
         os.chdir(directory)
+
+    logging.basicConfig(filename="pycon.log",
+                        format='%(asctime)s %(message)s',
+                        filemode='w')
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
 
 
 
@@ -475,14 +478,16 @@ def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: 
     # this ensures single in scope domains have more precedence than wild card out of scope domains
     all_domains.extend(in_scope_domains)
     all_domains = set(all_domains)
-    click.echo(f"All Domains\n{all_domains}")
+    click.echo(f"{len(all_domains)} remaining")
     # find info for all active domains
     click.echo("Domain Info")
     domains_info = scrape_domains_info(all_domains)
-    click.echo(domains_info)
-    if output:
-        with open(name, "w") as f:
-            json.dump(domains_info, f, default=serialize_datetime)
+    if not name:
+        name = "pycon_domain_info.json"
+
+    click.echo(f"writing domain JSON info to file {name}")
+    with open(name, "w") as f:
+        json.dump(domains_info, f, default=serialize_datetime)
     click.echo("Takeover")
     check_takeover(domains=all_domains)
     # take a screenshot of all web hosts domains
@@ -495,7 +500,7 @@ def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: 
 
 # silent mode        
 @click.command()
-@click.option("-o", "--output", "output", type=click.File('w'))
+@click.option("-o", "--output", "output", type=str, default="")
 @click.option("-oos", "--out-of-scope", "out_of_scope", type=click.File('r'))
 @click.argument("in_scope", type=click.File('r'))
 def main(output: str, out_of_scope: str, in_scope: str) -> None:
