@@ -19,6 +19,8 @@ import datetime
 from tqdm import tqdm 
 from pythonping import ping
 from typing import *
+from pathlib import Path
+from icecream import ic
 
 sys.path.insert(0, os.path.join("EyeWitness", "Python"))
 import EyeWitness
@@ -348,13 +350,9 @@ def scrape_domain_info(domain: str) -> Dict[str, Union[str, Dict[str, Union[str,
     """
     domain_info = {}
     domain_info["domain"] = domain
-    global print
-    tmpprint = print
-    print = logging.info
     domain_info.update(check_nmap(domain))
     domain_info["dns"] = query_dns(domain)
     domain_info["whois"] = check_whois(domain)
-    print = tmpprint
 
     return domain_info
 
@@ -442,6 +440,8 @@ def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: 
 
 
     directory, name = os.path.split(output)
+    name = Path(name).resolve().stem
+
 
     if directory == '':
         directory = RESULTS 
@@ -454,7 +454,7 @@ def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: 
         print(f"Creating new directory {directory}")
         os.mkdir(directory)
     except Exception as e:
-        sys.exit(1)
+        sys.exit(-1)
     finally:
         os.chdir(directory)
 
@@ -472,24 +472,42 @@ def pycon(out_of_scope_domains: List[str], in_scope_domains: List[str], output: 
     click.echo(f"{len(all_domains)} subdomains found")
     click.echo("Filter out of scope")
     all_domains = filter_out_of_scope(all_domains, out_of_scope_domains=out_of_scope_domains)
+    click.echo(f"{len(all_domains)} remaining")
     click.echo("Filter active domains")
     all_domains = filter_active(all_domains)
     # add back any in scope domains that were removed during the out of scope filter
     # this ensures single in scope domains have more precedence than wild card out of scope domains
     all_domains.extend(in_scope_domains)
-    all_domains = set(all_domains)
+    all_domains = list(set(all_domains))
     click.echo(f"{len(all_domains)} remaining")
+
     # find info for all active domains
     click.echo("Domain Info")
     domains_info = scrape_domains_info(all_domains)
     if not name:
-        name = "pycon_domain_info.json"
+        name = "pycon"
 
-    click.echo(f"writing domain JSON info to file {name}")
-    with open(name, "w") as f:
+    domain_info_path = name + "_domain_info.json"
+    click.echo(f"writing domain JSON info to file {os.path.join(directory, domain_info_path)}")
+    with open(domain_info_path, "w") as f:
         json.dump(domains_info, f, default=serialize_datetime)
-    click.echo("Takeover")
-    check_takeover(domains=all_domains)
+
+    # subdomain takeover
+    click.echo("Checking for Subdomain Takeovers...")
+    urls_path = name + "_urls.json"
+    ic(directory)
+    ic(urls_path)
+    ic(all_domains)
+    ic(type(all_domains))
+    print(f"writing all domains to {os.path.join(directory, urls_path)}")
+    with open(urls_path, "w") as f:
+        json.dump(all_domains, f)
+    takeover_result_path = name + "_takeover_results.json"
+    takeover_results = check_takeover(domains=all_domains)
+    click.echo(f"writing takeover JSON info to file {os.path.join(directory, takeover_result_path)}")
+    with open(takeover_result_path, "w") as f:
+        json.dump(takeover_results, f)
+
     # take a screenshot of all web hosts domains
     click.echo("Eyewitness")
     capture_web_screenshots(all_domains)
